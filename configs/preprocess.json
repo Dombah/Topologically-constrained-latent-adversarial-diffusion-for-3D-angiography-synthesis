@@ -1,0 +1,30 @@
+{
+  "_comment": "preprocess.py. All folders are relative to the repository root. Values reproduce processing.ipynb, the notebook that built Dataset/split_numpy for the thesis.",
+  "modalities": ["T1", "T2", "PD", "MRA"],
+  "image_extensions": [".nii.gz", ".nii"],
+  "folders": {
+    "raw": "Dataset/Quadruplets",
+    "skullstripped": "Dataset/SkullStripped",
+    "resampled": "Dataset/Resampled",
+    "normalized": "Dataset/Normalized",
+    "cropped": "Dataset/Cropped"
+  },
+  "_folders_comment": "raw is edited IN PLACE by the first two steps: files of incomplete cases are DELETED and non-LPS volumes are overwritten. Keep an untouched copy of the IXI download elsewhere.",
+  "synthstrip": {
+    "model_path": "third_party/synthstrip/synthstrip.1.pt",
+    "use_gpu": true,
+    "max_patients": 570
+  },
+  "resample": {
+    "target_spacing": [0.4, 0.4, 0.8],
+    "_comment": "MRA is resampled to this spacing; T1/T2/PD and every mask are then resampled onto each patient's MRA grid (linear for images, nearest for masks)."
+  },
+  "normalize": {
+    "lower_percentile": 0.5,
+    "upper_percentile": 99.9,
+    "mra_output_range": [0, 1]
+  },
+  "crop": {
+    "target_size": [512, 576, 96]
+  }
+}

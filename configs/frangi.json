@@ -1,0 +1,18 @@
+{
+  "_comment": "make_frangi_weights.py. The 'frangi_old' setting used by every bridge run in the thesis (processing.ipynb cell 27).",
+  "dataset_root": "Dataset/split_numpy",
+  "latent_root": "latents_v5_cldice",
+  "_latent_root_comment": "only read for the case list and the latent grid (128, 144, 24). The thesis caches were built against the v3 latents in latents/, which share that grid.",
+  "output_root": "Dataset/frangi_old",
+  "splits": ["train", "val"],
+  "sigmas": [1.0, 2.0, 3.0],
+  "black_ridges": false,
+  "robust_percentile": 99.7,
+  "frangi_downsample": 2,
+  "floor_percentile": 60.0,
+  "frangi_gamma": 1.15,
+  "latent_renormalize": true,
+  "latent_gamma": 1.1,
+  "post_min_value": 0.02,
+  "post_renormalize": true
+}

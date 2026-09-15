@@ -1,0 +1,31 @@
+{
+  "checkpoint": "checkpoints\\vaev2_multimodal\\kl5e5_from_epoch10\\best.pt",
+  "split": "val",
+  "cases": 57,
+  "summary": {
+    "T1": {
+      "ssim_global": 0.9458886584888223,
+      "ssim_masked": 0.968555139867883,
+      "psnr": 34.28227859010266,
+      "psnr_masked": 30.45976231029798,
+      "psnr_range1": 21.098988532205375,
+      "data_range": 4.575263843201754
+    },
+    "T2": {
+      "ssim_global": 0.9879356213556848,
+      "ssim_masked": 0.9795884814178735,
+      "psnr": 39.30913185904971,
+      "psnr_masked": 35.19368167198203,
+      "psnr_range1": 23.20326116334446,
+      "data_range": 6.469812225877193
+    },
+    "PD": {
+      "ssim_global": 0.9734977602418362,
+      "ssim_masked": 0.9755451104097199,
+      "psnr": 36.09300227065078,
+      "psnr_masked": 32.374682657016365,
+      "psnr_range1": 19.492066557436807,
+      "data_range": 6.776726973684211
+    }
+  }
+}

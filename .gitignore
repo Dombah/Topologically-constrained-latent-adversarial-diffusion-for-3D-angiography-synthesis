@@ -1,0 +1,25 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.uv-cache/
+
+# data and models (not in git)
+Dataset/
+latents/
+latents_*/
+checkpoints/
+cache/
+third_party/
+
+*.pt
+*.pth
+*.npy
+*.npz
+*.mp4
+*.log
+*.err
+
+# regenerable result images
+runs/**/*.png
+runs/**/*.pdf

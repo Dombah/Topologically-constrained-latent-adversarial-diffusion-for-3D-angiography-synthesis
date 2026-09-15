@@ -1,0 +1,47 @@
+{
+  "_comment": "train_vae_multimodal.py. Recipe of checkpoints/vaev2_multimodal/kl5e5_from_epoch10 (the conditioning VAE used by the bridge). Its notebook no longer exists: optimiser, scheduler, KL ramp and alignment weight were recovered from the checkpoint and training.jsonl, the patch size (96^3) from the author.",
+  "run_name": "multimodal_rebuild",
+  "_run_name_comment": "the run is written to checkpoints/rebuild/vae_multimodal/<run_name>; the thesis checkpoint folder is protected",
+  "data": {
+    "root": "Dataset/split_numpy",
+    "modalities": ["T1", "T2", "PD"],
+    "target_shape": [512, 576, 96],
+    "patch_size": [96, 96, 96],
+    "patches_per_patient": 8,
+    "_steps_comment": "455 training patients x 8 = 3640 steps per epoch, matching training.jsonl",
+    "brain_patch_ratio": 0.7,
+    "normalize_mode": "none",
+    "cache_dir": "Dataset/split_numpy/cache/vaev2_multimodal"
+  },
+  "model": {
+    "patch_size": [192, 192, 64],
+    "_patch_size_comment": "the model's TILE size for whole-volume encode/decode, as stored with the thesis checkpoint; the training crops come from data.patch_size",
+    "base_channels": 16,
+    "channel_multipliers": [1, 2, 4],
+    "latent_channels": 8,
+    "blocks_per_level": 1,
+    "output_activation": null
+  },
+  "loss": {
+    "latent_alignment_weight": 0.1,
+    "kl_start_weight": 1e-6,
+    "kl_final_weight": 5e-5,
+    "kl_warmup_start_epoch": 5,
+    "kl_warmup_epochs": 50,
+    "_kl_comment": "linear ramp 1e-6 -> 5e-5 over epochs 5-55; reproduces every kl_weight in training.jsonl"
+  },
+  "training": {
+    "epochs": 100,
+    "batch_size": 1,
+    "lr": 1e-4,
+    "weight_decay": 0.01,
+    "_schedule_comment": "AdamW + CosineAnnealingLR(T_max=epochs), both inside train_vaev2_multimodal",
+    "grad_clip": 1.0,
+    "use_amp": true,
+    "num_workers": 0,
+    "checkpoint_every": 10,
+    "val_every": 5,
+    "best_metric_name": "ssim",
+    "seed": 42
+  }
+}

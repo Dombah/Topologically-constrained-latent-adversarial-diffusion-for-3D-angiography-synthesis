@@ -1,0 +1,8 @@
+{
+  "checkpoint": "checkpoints\\vaev5_mra\\v5_cldice\\best.pt",
+  "split": "val",
+  "cases": 57,
+  "regime": "direct",
+  "mip_ssim": 0.9944601048190829,
+  "mip_psnr": 42.7490530080884
+}

@@ -1,0 +1,11 @@
+{
+  "model": "checkpoints\\vaev5_mra\\v5_cldice\\best.pt",
+  "split": "val",
+  "cases": 57,
+  "feature_dim": 512,
+  "fid_empirical": 0.0002342416562097092,
+  "fid_shrinkage": 0.0002293998773262183,
+  "paired_feature_l2": 0.001999128439657716,
+  "recon_mode": "direct",
+  "shrinkage_alpha": 0.1
+}

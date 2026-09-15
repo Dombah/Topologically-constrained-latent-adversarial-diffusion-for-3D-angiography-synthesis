@@ -1,0 +1,114 @@
+{
+  "_comment": "Brownian Bridge latent diffusion (train_bbdm.py). Diffuses data-to-data rather than data-to-noise; see the module docstring.",
+  "data": {
+    "target_root": "latents_v5_cldice",
+    "target_modality": "MRA",
+    "conditioning_root": "latents",
+    "source_modalities": [
+      "T1",
+      "T2",
+      "PD"
+    ],
+    "_root_comment": "target_root holds MRA re-exported from the chosen VAEv4/v5 checkpoint by export_latents.py. conditioning_root holds T1/T2/PD from the multimodal VAEv2. They are separate because the MRA latents are re-exported whenever the VAE changes and the conditioning ones are not.",
+    "latent_crop": [
+      128,
+      144,
+      24
+    ],
+    "_crop_comment": "FULL volume, no crop. The previous run trained this way and vessels span the whole brain -- a crop severs them at the boundary, which works against a topology objective. Measured 5.85 GB peak at batch 1, 0.245 s/step.",
+    "preload_to_ram": false,
+    "cache_dtype": "float16",
+    "frangi_root": "Dataset/frangi_old",
+    "_frangi_comment": "precomputed Frangi vesselness, already stored at latent resolution (1,128,144,24) and cropped with the latents. Weights the x0-space losses toward vessels without decoding anything. train+val only; missing maps become zeros.",
+    "_preload_comment": "mmap instead of a 16.5 GB preload. On a 31.8 GB machine with the user apps running, the preload gets paged out: the process RSS fell 12.9 -> 6.1 GB and the GPU sat at 80 W of 360 W with 100 % reported utilisation -- waiting on page faults, not computing. Epochs went 325 s -> 2393 s. Per step this reads ~35 MB of latents, which the OS page cache serves fine."
+  },
+  "vae": {
+    "checkpoint": "checkpoints/vaev5_mra/v5_cldice/best.pt",
+    "_comment": "used only at validation, to decode sampled latents into image space. MUST be the same checkpoint target_root was exported from."
+  },
+  "model": {
+    "base_channels": 48,
+    "channel_multipliers": [
+      1,
+      2,
+      4,
+      4
+    ],
+    "blocks_per_level": 2,
+    "attention_levels": [
+      2,
+      3
+    ],
+    "dropout": 0.0,
+    "time_embed_dim": 192,
+    "cond_base_channels": 48,
+    "_comment": "conditioning is NOT concatenated at the input. CondEncoder3D produces one feature map per level and AdaGNResBlock3D injects it as post-norm scale/shift, zero-initialised. v1 concatenated frozen VAE latents once at the input, which gave the network no way to adapt features trained to reconstruct T1/T2/PD rather than predict MRA.",
+    "_sizing_comment": "cond_base 48 gives a 5.32 M-parameter conditioning encoder, matching the 6.2 M one the previous working model used. Measured on an idle GPU: 46.3 M total, 8.43 GB peak at batch 1 on full 128x144x24 volumes, 0.240 s/step -> 15.1 h for 500 x 455. cond_base 24 was 1.34 M and only 0.4 h faster, so the larger encoder is nearly free.",
+    "projector_base": 64,
+    "projector_blocks": 3,
+    "_projector_comment": "BridgeProjector maps the 24 source channels to the 16-channel target space, giving the bridge its endpoint. It is a latent-space regressor and is trained both through the bridge and by an explicit L1 against x0."
+  },
+  "diffusion": {
+    "timesteps": 1000,
+    "schedule": "cosine",
+    "prediction": "v",
+    "timestep_sampling": "logit_normal",
+    "logit_normal_mean": 0.0,
+    "logit_normal_std": 1.0,
+    "min_snr_gamma": 5.0,
+    "_sampling_comment": "REVIEW_2026-09-02 P1: the previous run drew 60 % of timesteps at t>=700 and applied x0-space losses at every timestep, which made it behave as a conditional-mean regressor. logit_normal concentrates on the mid-noise band that actually carries signal; 'uniform' is the fallback.",
+    "_min_snr_comment": "Hang et al. 2023. For v-prediction the weight is min(SNR, gamma)/(SNR+1). Set gamma to 0 to disable.",
+    "_cfg_comment": "No classifier-free guidance: the condition also defines the bridge endpoint, so dropping it removes the process rather than leaving an unconditional model."
+  },
+  "losses": {
+    "bridge_mse": 1.0,
+    "endpoint_l1": 0.5,
+    "x0_smooth_l1": 1.0,
+    "frangi_l1": 1.5,
+    "frangi_mip": 0.25,
+    "vessel_gradient": 0.08,
+    "frangi_alpha": 8.0,
+    "gradient_alpha": 4.0,
+    "x0_m_gate": 0.8,
+    "_gate_comment": "auxiliaries fire while m_t <= 0.8. Near m_t=1 the state IS the endpoint and x0 is only knowable through conditioning -- the regression regime, and the bridge analogue of v2's SNR gate.",
+    "_weight_comment": "weights carried over from v2 and NOT yet calibrated against the bridge's own loss scale. Check the per-term shares in training.jsonl on the first epochs; every previous miscalibration in this project came from reusing a weight across a changed objective."
+  },
+  "training": {
+    "epochs": 500,
+    "steps_per_epoch": 455,
+    "batch_size": 1,
+    "lr": 0.0001,
+    "weight_decay": 0.01,
+    "warmup_steps": 500,
+    "decay_start_epoch": 0,
+    "grad_clip": 1.0,
+    "ema_decay": 0.999,
+    "amp_dtype": "bfloat16",
+    "workers": 3,
+    "seed": 42,
+    "hours": 15.0,
+    "_budget_comment": "15 h cap so the chain cannot overrun the unattended window. The run is resumable from latest.pt, so hitting the cap costs nothing but a restart.",
+    "_amp_comment": "bfloat16, NOT float16. There is no GradScaler in the loop, and sqrt(alpha_bar) reaches 1.0e-4 at t=999 against fp16's 6.1e-5 smallest normal -- fp16 would underflow silently. Same choice as the previous run. fp16 is used for VAE inference only, where there are no gradients.",
+    "_workers_comment": "Safe now. Windows spawns workers, which pickles the dataset; with the RAM cache included that was ~16.5 GB per worker and is why the previous LDM ran with VPRED_NUM_WORKERS=0. PairedLatentDataset.__getstate__ drops the cache, so a worker now receives 0.004 MB and reads via mmap. Measured 119 ms/batch at 0 workers (serial, ~23 h total) against 47.6 ms at 3 (overlapped, ~15.5 h). If workers still fail to start the loop prints a warning and falls back to 0 rather than dying."
+  },
+  "validation": {
+    "every": 10,
+    "cases": 6,
+    "steps": [
+      5,
+      50
+    ],
+    "decode": true,
+    "_comment": "the endpoint alone is scored every cycle, so 'the reverse process improves on its endpoint' stays measured rather than assumed."
+  },
+  "output": {
+    "run_dir": "checkpoints/rebuild/bbdm",
+    "checkpoint_every": 25,
+    "_rebuild_comment": "the thesis run is checkpoints/ldm_bbdm (protected); new runs go to checkpoints/rebuild. data.conditioning_root 'latents' is the FIXED T1/T2/PD latent set; use latents_multimodal for a from-scratch rebuild."
+  },
+  "bridge": {
+    "steps": 1000,
+    "max_variance": 1.0,
+    "_comment": "delta_t = 2*s*(m_t - m_t^2), zero at both endpoints, peak 0.5*s at m=1/2. Li et al. 2023 use s=1."
+  }
+}

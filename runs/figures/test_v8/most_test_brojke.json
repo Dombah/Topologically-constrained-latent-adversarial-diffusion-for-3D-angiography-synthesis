@@ -1,0 +1,33 @@
+{
+  "model": "checkpoints\\ldm_bbdm_vessel\\ft_cldice\\best.pt",
+  "epoch": 10,
+  "split": "test",
+  "steps": 5,
+  "selection": "prva dva Guys, prvi HH, prvi IOP abecednim redom",
+  "cases": {
+    "IXI022-Guys-0701": {
+      "z": 35,
+      "ssim_global": 0.803617250232888,
+      "ssim_masked": 0.5059344172477722,
+      "psnr": 28.631612597203873
+    },
+    "IXI030-Guys-0708": {
+      "z": 22,
+      "ssim_global": 0.8048071672710007,
+      "ssim_masked": 0.49512359499931335,
+      "psnr": 26.70172629460844
+    },
+    "IXI056-HH-1327": {
+      "z": 26,
+      "ssim_global": 0.8366253164545121,
+      "ssim_masked": 0.552838146686554,
+      "psnr": 30.68955653461429
+    },
+    "IXI315-IOP-0888": {
+      "z": 33,
+      "ssim_global": 0.8939266969608178,
+      "ssim_masked": 0.71189945936203,
+      "psnr": 28.772382166416342
+    }
+  }
+}
