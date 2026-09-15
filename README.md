@@ -71,8 +71,6 @@ figures/      one script per thesis figure
 tests/        pytest
 ```
 
-Data (not in git): `Dataset/`, `latents/`, `latents_v5_cldice/`, `checkpoints/`, `runs/`.
-
 ## 3. Thesis artefacts are protected
 
 These hold the results the thesis reports. Every training and export script refuses to write
