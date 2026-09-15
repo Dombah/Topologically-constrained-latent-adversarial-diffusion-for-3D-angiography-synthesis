@@ -85,18 +85,9 @@ into them:
 | `checkpoints/vaev5_mra/v5_{cldice,adv,both}/best.pt` | MRA VAE v5 arms; `v5_cldice` is used everywhere |
 | `checkpoints/ldm_bbdm/best.pt` | base bridge (epoch 170) and its arms `ft_*`, `both_ep10_assessed.pt` |
 | `checkpoints/ldm_bbdm_vessel/ft_cldice/best.pt` | **the delivered model** |
-| `latents/{T1,T2,PD}` | conditioning latents, a **fixed input** (see below) |
+| `latents/{T1,T2,PD}` | conditioning latents, a **fixed input**  |
 | `latents_v5_cldice/` | MRA target latents (the export reproduces them bit-for-bit) |
 | `runs/table53_test/` | the test-set results of Tables 5.3 and 5.4 |
-
-New runs go to `checkpoints/rebuild/…` by default. Each stage's inputs default to the thesis
-artefacts, so any single stage can be rerun on its own.
-
-**`latents/{T1,T2,PD}` cannot be regenerated exactly.** The notebook that exported them no
-longer exists, and no encoding of any checkpoint on disk reproduces them (closest max |diff|
-0.27; correlation 0.976). Every bridge checkpoint was trained on these files, so keep them.
-`export_latents.py --model multimodal` writes equivalent latents to `latents_multimodal/` for
-a from-scratch rebuild.
 
 ## 4. Pipeline
 
@@ -205,9 +196,3 @@ uv run pytest
 94 tests cover the models, losses, metrics, Frangi weights, preprocessing and the protection
 of thesis folders, plus `--help` for every script. Tests that need the local thesis
 checkpoints skip themselves when those are absent.
-
-## 6. History
-
-The repository was reorganised on 15 September 2026 from notebooks and experiment scripts
-into this layout; `cleanup.md` records what moved where and how each step was checked. The
-pre-cleanup history is kept locally, not in this repository.
