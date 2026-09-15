@@ -1,4 +1,4 @@
-# Topološki ograničena latentna suparnička difuzija za sintezu 3D angiografije
+# Topologically constrained latent adversarial diffusion for 3D angiography synthesis
 
 Synthesis of 3D TOF-MRA from T1, T2 and PD MRI (IXI dataset, 568 cases, 455 / 57 / 56 split).
 A Brownian-bridge diffusion model works in the latent spaces of two autoencoders and is then
