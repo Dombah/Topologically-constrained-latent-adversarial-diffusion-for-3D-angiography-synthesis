@@ -1,8 +1,27 @@
 # Topologically constrained latent adversarial diffusion for 3D angiography synthesis
 
-Synthesis of 3D TOF-MRA from T1, T2 and PD MRI (IXI dataset, 568 cases, 455 / 57 / 56 split).
-A Brownian-bridge diffusion model works in the latent spaces of two autoencoders and is then
-fine-tuned with topology (clDice + soft Dice) and adversarial losses.
+**Generating 3D brain angiography from routine MRI.**
+
+MSc thesis · FERIT Osijek, 2026 · graded 5/5 · *"Topološki ograničena latentna suparnička difuzija za sintezu 3D angiografije"*
+<!-- Add the thesis PDF link here once it's online. -->
+
+![Python](https://img.shields.io/badge/Python-3.12-3776AB?style=flat&logo=python&logoColor=white)
+![PyTorch](https://img.shields.io/badge/PyTorch-2.10-EE4C2C?style=flat&logo=pytorch&logoColor=white)
+![tests](https://img.shields.io/badge/tests-94%20pytest-0A9EDC?style=flat&logo=pytest&logoColor=white)
+![uv](https://img.shields.io/badge/env-uv-DE5FE9?style=flat)
+
+<!-- Hero image: run `uv run figures/fig_test_synthesis.py`, copy one of the
+     runs/figures/most_test_<case>.png files to docs/test_synthesis.png, commit it, and uncomment.
+<p align="center">
+  <img src="docs/test_synthesis.png" width="90%" alt="Ground-truth vs. synthesised TOF-MRA, maximum intensity projections">
+</p>
+-->
+
+**The problem.** Time-of-flight MR angiography (TOF-MRA) shows the brain's blood vessels. It is a separate scan, though, and many patients never get one. This project **synthesises a full 3D TOF-MRA volume from the T1, T2 and PD scans** a patient already has.
+
+**Why it's hard.** Vessels fill a tiny fraction of the volume and are often thinner than a voxel. A model can score well on image metrics while breaking vessels apart or dropping them altogether. That is why this project measures vessel *topology* as well as pixel similarity.
+
+## 🧠 How it works
 
 ```
 T1/T2/PD ─► multimodal VAE ─► 24-ch condition ─┬─► bridge projector ─► Brownian bridge, 5 steps ─► 16-ch MRA latent ─► MRA VAE decoder ─► TOF-MRA
@@ -10,8 +29,42 @@ T1/T2/PD ─► multimodal VAE ─► 24-ch condition ─┬─► bridge projec
 MRA ──────► MRA VAE (v5, clDice) ─► 16-ch target (training only)
 ```
 
-Step-by-step settings, expected numbers, checks and troubleshooting for every training stage
-are in **[Instructions.md](Instructions.md)**. This file is the map and the command list.
+1. **Two 3D VAEs** compress the inputs and the target. The multimodal VAE encodes T1/T2/PD into a 24-channel condition. The MRA VAE, fine-tuned with clDice so the latents keep vessels intact, encodes TOF-MRA into a 16-channel latent. Diffusion then runs on a grid with 64× fewer voxels than the original scan.
+2. **A Brownian-bridge diffusion model (BBDM)** travels from a projected estimate of the target to the target itself, instead of starting from pure noise. Because it starts from an informed point, **5 sampling steps** are enough. The 3D U-Net receives the condition through AdaGN modulation at every level.
+3. **Topology-aware fine-tuning** adds clDice, which rewards connected vessel centrelines, together with soft Dice and Frangi vesselness weighting. Adversarial losses were tested as well and are reported in the ablation below.
+
+## 📊 Results
+
+All results are on the **held-out test set**: 56 subjects from 3 hospitals, evaluated once. Bridge sampling uses 5 steps.
+
+| Model | Masked SSIM | MIP SSIM | Vessel Dice | clDice | Vessel precision | Vessel volume ratio |
+|---|:-:|:-:|:-:|:-:|:-:|:-:|
+| *MRA VAE reconstruction (upper bound)* | *0.991* | *0.994* | *0.948* | *0.933* | *0.959* | *0.98* |
+| Projector only, no diffusion | 0.498 | 0.591 | 0.034 | 0.027 | 0.630 | 0.09 |
+| Brownian bridge (base) | 0.541 | 0.698 | 0.248 | 0.160 | 0.416 | 0.63 |
+| + clDice only | 0.539 | 0.694 | 0.278 | **0.296** | 0.247 | 1.63 |
+| **+ clDice, soft Dice, vessel weights (delivered)** | **0.541** | **0.697** | **0.270** | 0.207 | **0.360** | **0.87** |
+
+*Vessel volume ratio is the predicted vessel volume divided by the true vessel volume. A value of 1.0 means vessels have the right thickness.*
+
+**What the numbers show:**
+- **Diffusion is what creates the vessels.** The projector alone produces an image of roughly the right overall shape but almost no vessels (Dice 0.03). The bridge recovers them (Dice 0.25).
+- **Topology fine-tuning improves connectivity without blurring.** The delivered model raises clDice by **29%** and vessel Dice by **9%** over the base bridge, and keeps SSIM unchanged.
+- **A higher score isn't always better.** clDice on its own gives the best connectivity number by *thickening* vessels: they come out at 1.63× their true volume and precision drops to 0.25. The delivered model was chosen because its vessels have close to the right thickness (0.87×).
+- **The bottleneck is the mapping, not the autoencoder.** The MRA VAE reconstructs vessels almost perfectly (Dice 0.95). The hard part is predicting where the vessels are from scans that barely show them.
+
+**Known limitations:**
+- Thin peripheral vessels can still break or come out thicker than they should.
+- Absolute vessel overlap is still modest (Dice 0.27). The model gets the major vessels, not the full tree.
+- Results vary between the three hospitals. Per-site numbers are in `runs/table53_test/summary.json`.
+
+## ✨ Engineering highlights
+- **Full pipeline.** Raw IXI NIfTI files go through reorientation, SynthStrip skull-stripping, resampling and a site-stratified 455/57/56 split. After that come the two VAEs, the latent bridge, and evaluation that includes Betti numbers and per-site breakdowns.
+- **Reproducible.** Every table and figure in the thesis is regenerated by a single script in `analysis/` or `figures/`. Dependencies are locked with `uv`.
+- **Safe to experiment.** The training scripts refuse to overwrite the checkpoints and test results that the thesis reports. Every trainer has a `--smoke` mode, and the test split is used exactly once.
+- **Tested.** 94 pytest tests cover the models, losses, metrics, preprocessing and the protection of thesis artefacts.
+
+Step-by-step settings, expected numbers, checks and troubleshooting for every training stage are in **[Instructions.md](Instructions.md)**. The rest of this file is the map and the command list.
 
 ---
 
