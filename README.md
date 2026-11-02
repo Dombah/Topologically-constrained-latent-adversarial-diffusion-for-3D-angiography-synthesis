@@ -1,68 +1,139 @@
 # Topologically constrained latent adversarial diffusion for 3D angiography synthesis
 
-**Generating 3D brain angiography from routine MRI.**
+**Generating 3D brain angiography from routine MRI, with no extra scan.**
 
-MSc thesis · FERIT Osijek, 2026 · graded 5/5 · *"Topološki ograničena latentna suparnička difuzija za sintezu 3D angiografije"*
-<!-- Add the thesis PDF link here once it's online. -->
+MSc thesis · FERIT Osijek, 2026 · graded 5/5
+Supervised by prof. dr. sc. Irena Galić, co-supervised by Juraj Perić, univ. mag. ing. comp.
+*Original title: "Topološki ograničena latentna suparnička difuzija za sintezu 3D angiografije"*
 
 ![Python](https://img.shields.io/badge/Python-3.12-3776AB?style=flat&logo=python&logoColor=white)
 ![PyTorch](https://img.shields.io/badge/PyTorch-2.10-EE4C2C?style=flat&logo=pytorch&logoColor=white)
 ![tests](https://img.shields.io/badge/tests-94%20pytest-0A9EDC?style=flat&logo=pytest&logoColor=white)
 ![uv](https://img.shields.io/badge/env-uv-DE5FE9?style=flat)
 
-<!-- Hero image: run `uv run figures/fig_test_synthesis.py`, copy one of the
-     runs/figures/most_test_<case>.png files to docs/test_synthesis.png, commit it, and uncomment.
 <p align="center">
-  <img src="docs/test_synthesis.png" width="90%" alt="Ground-truth vs. synthesised TOF-MRA, maximum intensity projections">
+  <img src="docs/test_synthesis.png" width="100%" alt="Real vs. synthesised TOF-MRA (maximum intensity projections) for two test subjects from different hospitals">
+  <br><sub>Maximum intensity projections of two <b>test-set</b> subjects. The synthesised volumes were generated from T1, T2 and PD only.</sub>
 </p>
--->
 
-**The problem.** Time-of-flight MR angiography (TOF-MRA) shows the brain's blood vessels. It is a separate scan, though, and many patients never get one. This project **synthesises a full 3D TOF-MRA volume from the T1, T2 and PD scans** a patient already has.
+## 🩺 The problem
 
-**Why it's hard.** Vessels fill a tiny fraction of the volume and are often thinner than a voxel. A model can score well on image metrics while breaking vessels apart or dropping them altogether. That is why this project measures vessel *topology* as well as pixel similarity.
+**TOF-MRA** (time-of-flight MR angiography) shows the brain's arteries. A 3D TOF-MRA scan takes several minutes, and any patient movement during it lowers image quality. T1, T2 and PD scans, by contrast, are part of almost every brain MRI exam. This project **synthesises the 3D TOF-MRA from the T1, T2 and PD scans** the patient already has.
+
+**Why it's hard:**
+- Vessels fill only **about 1% of the volume** (3.2% of brain voxels).
+- L1 and L2 losses treat every voxel the same, so a model learns the shape of the brain and leaves the vessels out.
+- PSNR and SSIM can stay high even when no vessels are present at all.
+- Vessels break apart easily. That's why the project uses a topology loss and measures connectivity with Betti numbers.
 
 ## 🧠 How it works
 
-```
-T1/T2/PD ─► multimodal VAE ─► 24-ch condition ─┬─► bridge projector ─► Brownian bridge, 5 steps ─► 16-ch MRA latent ─► MRA VAE decoder ─► TOF-MRA
-                                               │
-MRA ──────► MRA VAE (v5, clDice) ─► 16-ch target (training only)
+```mermaid
+flowchart LR
+    IN["T1 · T2 · PD<br/>512×576×96"] --> MVAE["Multimodal VAE<br/>encoder (frozen)"]
+    MVAE --> C["Condition c<br/>24×128×144×24"]
+    C --> P["Projector P(c)<br/>24→16 ch · 0.4 M"]
+    C --> CE["Condition encoder<br/>5.3 M"]
+    P -- "start point y" --> BB["Brownian bridge<br/>3D U-Net · 46 M<br/>5 sampling steps"]
+    CE -- "AdaGN at every level" --> BB
+    BB -- "x̂₀" --> DEC["MRA VAE<br/>decoder (frozen)"]
+    DEC --> OUT["Synthesised TOF-MRA<br/>512×576×96"]
+    GT["Real MRA<br/>512×576×96"] -.-> ENC["MRA VAE<br/>encoder (frozen)"]
+    ENC -. "x₀ (training only)" .-> BB
 ```
 
-1. **Two 3D VAEs** compress the inputs and the target. The multimodal VAE encodes T1/T2/PD into a 24-channel condition. The MRA VAE, fine-tuned with clDice so the latents keep vessels intact, encodes TOF-MRA into a 16-channel latent. Diffusion then runs on a grid with 64× fewer voxels than the original scan.
-2. **A Brownian-bridge diffusion model (BBDM)** travels from a projected estimate of the target to the target itself, instead of starting from pure noise. Because it starts from an informed point, **5 sampling steps** are enough. The 3D U-Net receives the condition through AdaGN modulation at every level.
-3. **Topology-aware fine-tuning** adds clDice, which rewards connected vessel centrelines, together with soft Dice and Frangi vesselness weighting. Adversarial losses were tested as well and are reported in the ablation below.
+1. **Two 3D autoencoders.**
+   - The MRA VAE compresses each volume 4× along every axis, giving 64× fewer spatial positions with 16 channels. It still keeps the vessels: Dice 0.948 after encoding and decoding.
+   - The multimodal VAE encodes T1, T2 and PD into 3 × 8 channels, which serve as the condition.
+2. **A Brownian-bridge diffusion model** runs in the latent space. Standard diffusion starts from pure noise. Here, the bridge starts from the projector's estimate `y = P(c)` and travels to the target, so **5 deterministic steps** are enough (T = 1000).
+3. **Vessel-focused losses.**
+   - The network predicts `xₜ − x₀`.
+   - Frangi vesselness maps make errors on vessels count up to **9×** more.
+   - Losses on `x̂₀` are applied only away from the bridge's end point. Near the end point, `x₀` is determined by the condition alone, so the model would just learn an average.
+4. **Fine-tuning branches.** All branches start from the same base model, epoch 170. The options tested were:
+   - **Topology:** soft clDice, which compares vessel skeletons and penalises breaks, paired with soft Dice, which penalises excess voxels.
+   - **Adversarial:** a 2D PatchGAN on maximum intensity projections.
 
 ## 📊 Results
 
-All results are on the **held-out test set**: 56 subjects from 3 hospitals, evaluated once. Bridge sampling uses 5 steps.
+Epochs, branches and step counts were chosen on the validation set only (57 volumes). The test set (**56 volumes from 3 hospitals**) was evaluated **once**, for all models at the same time, with the same seed.
 
-| Model | Masked SSIM | MIP SSIM | Vessel Dice | clDice | Vessel precision | Vessel volume ratio |
+| Model | Vessel Dice | clDice | Vessel volume ratio | Precision | b1 error | PSNR [dB] |
 |---|:-:|:-:|:-:|:-:|:-:|:-:|
-| *MRA VAE reconstruction (upper bound)* | *0.991* | *0.994* | *0.948* | *0.933* | *0.959* | *0.98* |
-| Projector only, no diffusion | 0.498 | 0.591 | 0.034 | 0.027 | 0.630 | 0.09 |
-| Brownian bridge (base) | 0.541 | 0.698 | 0.248 | 0.160 | 0.416 | 0.63 |
-| + clDice only | 0.539 | 0.694 | 0.278 | **0.296** | 0.247 | 1.63 |
-| **+ clDice, soft Dice, vessel weights (delivered)** | **0.541** | **0.697** | **0.270** | 0.207 | **0.360** | **0.87** |
+| *MRA VAE reconstruction (upper bound)* | *0.948* | *0.932* | *0.98* | *0.959* | *4.5* | *49.7* |
+| Projector only, no diffusion | 0.034 | 0.027 | 0.09 | 0.630 | 55.1 | 28.38 |
+| Brownian bridge (base model) | 0.248 | 0.160 | 0.63 | **0.416** | 39.6 | **28.71** |
+| + clDice | 0.278 | **0.296** | 1.63 | 0.247 | 32.8 | 28.13 |
+| **+ clDice and soft Dice** | **0.278** | 0.225 | **0.96** | 0.339 | 35.6 | 28.46 |
+| + adversarial loss | 0.256 | 0.224 | 1.80 | 0.251 | **28.6** | 27.62 |
+| + clDice, soft Dice and adversarial | 0.278 | 0.233 | 1.19 | 0.308 | 29.9 | 27.99 |
+| Final model (clDice + soft Dice, stronger vessel losses) | 0.270 | 0.207 | 0.87 | 0.360 | 36.9 | 28.56 |
 
-*Vessel volume ratio is the predicted vessel volume divided by the true vessel volume. A value of 1.0 means vessels have the right thickness.*
+<sub>**Vessel volume ratio** is the number of vessel voxels in the synthesis divided by the number in the reference. 1.0 is correct, and above 1 means vessels are too thick. **b1 error** is the error in the number of independent loops in the vessel network; the reference has 55.1.</sub>
 
-**What the numbers show:**
-- **Diffusion is what creates the vessels.** The projector alone produces an image of roughly the right overall shape but almost no vessels (Dice 0.03). The bridge recovers them (Dice 0.25).
-- **Topology fine-tuning improves connectivity without blurring.** The delivered model raises clDice by **29%** and vessel Dice by **9%** over the base bridge, and keeps SSIM unchanged.
-- **A higher score isn't always better.** clDice on its own gives the best connectivity number by *thickening* vessels: they come out at 1.63× their true volume and precision drops to 0.25. The delivered model was chosen because its vessels have close to the right thickness (0.87×).
-- **The bottleneck is the mapping, not the autoencoder.** The MRA VAE reconstructs vessels almost perfectly (Dice 0.95). The hard part is predicting where the vessels are from scans that barely show them.
+### What the results show
 
-**Known limitations:**
-- Thin peripheral vessels can still break or come out thicker than they should.
-- Absolute vessel overlap is still modest (Dice 0.27). The model gets the major vessels, not the full tree.
-- Results vary between the three hospitals. Per-site numbers are in `runs/table53_test/summary.json`.
+1. **The reverse bridge process is what creates the vessels.**
+   - The projector alone reaches a vessel Dice of 0.034 and has no component above the vessel threshold.
+   - After the bridge, Dice is 0.248. FID drops from 4.50 to 0.085.
+   - Meanwhile PSNR changes by only **0.33 dB**: standard image metrics barely tell a volume with vessels apart from one without.
+2. **The topology loss only helps when it's paired with a counterweight.**
+   - clDice alone gets the highest clDice by **thickening the vessels**, to a volume ratio of 1.63 with precision falling to 0.247.
+   - Paired with soft Dice, Dice rises to 0.278 (better in **52 of 56** volumes) and the volume ratio is 0.96. The b1 error also falls from 39.6 to 35.6.
+3. **Adversarial loss isn't used in the final model.** It was tested on both the autoencoder and the diffusion model. In both cases it thickened structures and lowered fidelity: −1.09 dB PSNR and a volume ratio of 1.80.
+4. **PSNR and SSIM aren't enough on their own.** Judging this task also takes Dice, clDice, vessel volume ratio, precision, Betti numbers and visual inspection.
+
+### Where the error comes from
+
+| Stage | Finding |
+|---|---|
+| Compression | The autoencoder keeps almost the whole vessel network (Dice **0.948**, Betti errors 2.1 / 4.5). |
+| Latent sensitivity | Gaussian noise with std 0.25 in the latent drops Dice to **0.59**. |
+| Model error | An error of the same size from the diffusion model drops Dice about **2× more**, because it is concentrated on vessels. |
+
+So the small vessels are lost **during diffusion, not during compression**. The latent space keeps the vascular information, but stores it in a way where small errors cost a lot.
+
+### Limitations
+- **Fine peripheral vessels and junctions go missing.** The final model has 21 loops against 55 in the reference.
+- **The topology loss sees only 16 of 96 slices.** It is computed on 128 × 144 × 4 latent slabs, which is 512 × 576 × 16 voxels after decoding.
+- **Hardware limits:** a batch size of 1 on a single 16 GB GPU.
+- **Narrow data:** only the IXI dataset and only healthy subjects, with no external comparison on the same protocol.
+
+**Future work:**
+- a topology loss over a larger extent, using activation recomputation and slabs in three orientations
+- a separate objective for the number of components (b0)
+- pixel-space diffusion as an independent check
+- an external dataset with intensity harmonisation
+
+## 🗂️ Data
+
+The data is **IXI**: 568 paired subjects from three London hospitals, split 80/10/10 by subject and stratified by hospital.
+
+| Hospital (scanner) | Train | Val | Test |
+|---|:-:|:-:|:-:|
+| Guys (Philips 1.5 T) | 252 | 32 | 31 |
+| HH (Philips 3 T) | 145 | 18 | 18 |
+| IOP (GE 1.5 T) | 58 | 7 | 7 |
+| **Total** | **455** | **57** | **56** |
+
+**Preprocessing steps:**
+1. pairing by file name
+2. LPS+ reorientation
+3. SynthStrip skull-stripping
+4. resampling the MRA to 0.4 × 0.4 × 0.8 mm
+5. resampling T1, T2 and PD onto the MRA grid
+6. intensity normalisation
+7. padding or cropping to 512 × 576 × 96
 
 ## ✨ Engineering highlights
-- **Full pipeline.** Raw IXI NIfTI files go through reorientation, SynthStrip skull-stripping, resampling and a site-stratified 455/57/56 split. After that come the two VAEs, the latent bridge, and evaluation that includes Betti numbers and per-site breakdowns.
+- **Full pipeline in one repo.** It covers raw IXI NIfTI files through preprocessing, both VAEs, the latent bridge, the fine-tuning branches and the evaluation, which includes Betti numbers and per-site breakdowns.
 - **Reproducible.** Every table and figure in the thesis is regenerated by a single script in `analysis/` or `figures/`. Dependencies are locked with `uv`.
-- **Safe to experiment.** The training scripts refuse to overwrite the checkpoints and test results that the thesis reports. Every trainer has a `--smoke` mode, and the test split is used exactly once.
+- **Safe to experiment.** Training scripts refuse to overwrite the checkpoints and test results that the thesis reports. Every trainer has a `--smoke` mode.
 - **Tested.** 94 pytest tests cover the models, losses, metrics, preprocessing and the protection of thesis artefacts.
+
+**Training details:**
+- **Base model:** AdamW at lr 10⁻⁴, batch size 1, bfloat16, EMA 0.999. It trained for 340 epochs (15 h) on an RTX 5080, and epoch 170 was selected by Dice.
+- **Fine-tuning:** the projector is frozen, lr is 2 · 10⁻⁵, and each branch trains for 10–40 epochs.
 
 Step-by-step settings, expected numbers, checks and troubleshooting for every training stage are in **[Instructions.md](Instructions.md)**. The rest of this file is the map and the command list.
 
